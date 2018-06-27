@@ -17,8 +17,7 @@ infotext = '''```[SC] Reggie v0.0.6 alpha
 
 v0.1 roadmap:
 - draft_hero
-    - additional arguments
-        - force draft hero for player, role, or both
+    - force draft hero for player, role, or both
 
 v0.2:
 - bans
