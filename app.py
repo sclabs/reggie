@@ -7,7 +7,7 @@ import threading
 import requests
 from lxml import html
 from flask import Flask, request, jsonify
-import reggieconstants
+import reggie_constants
 from itertools import permutations
 from scipy import stats
 from string import punctuation
@@ -17,7 +17,9 @@ app = Flask(__name__)
 # To initialize DB, pop open a Python interpreter and run:
 # >>> from app import db
 # >>> db.create_all()
-app.config["SQLALCHEMY_DATABASE_URI"] = 'mysql+pymysql://' + os.environ['DB_USERNAME'] + ':' + os.environ['DB_PASSWORD'] + '@' + os.environ['DB_URL'] + '/reggiedb'
+app.config["SQLALCHEMY_DATABASE_URI"] = ('mysql+pymysql://' +
+        os.environ['DB_USERNAME'] + ':' + os.environ['DB_PASSWORD'] + '@' +
+        os.environ['DB_URL'] + '/reggiedb')
 app.config["SQLALCHEMY_POOL_RECYCLE"] = 299
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
@@ -32,21 +34,21 @@ class HeroVsHero(db.Model):
     __tablename__ = "heroVsHero"
     id = db.Column(db.Integer, primary_key=True)
     thishero = db.Column(db.String(64))
-    for hero in reggieconstants.global_hero_list:
+    for hero in reggie_constants.global_hero_list:
         locals()[hero] = db.Column(db.String(64))
 
 class PlayerOnHero(db.Model):
     __tablename__ = "playerOnHero"
     id = db.Column(db.Integer, primary_key=True)
     playerID = db.Column(db.String(64))
-    for hero in reggieconstants.global_hero_list:
+    for hero in reggie_constants.global_hero_list:
         locals()[hero] = db.Column(db.String(64))
 
 class NumGamesOnHero(db.Model):
     __tablename__ = "numGamesOnHero"
     id = db.Column(db.Integer, primary_key=True)
     playerID = db.Column(db.String(64))
-    for hero in reggieconstants.global_hero_list:
+    for hero in reggie_constants.global_hero_list:
         locals()[hero] = db.Column(db.String(64))
 
 def draft_start(current_players):
@@ -57,7 +59,7 @@ def draft_start(current_players):
     data = {'players': [],
             'friendlies': [None, None, None, None, None],
             'enemies': [],
-            'rec_pool': reggieconstants.global_hero_list}
+            'rec_pool': reggie_constants.global_hero_list}
 
     for player in current_players:
         if player not in [player.name for player in Player.query.all()]:
@@ -124,14 +126,15 @@ def reload_roles():
                         'Hard Support': '5'}
     role_data = {'1': [], '2': [], '3': [], '4': [], '5': []}
 
-    for hero in reggieconstants.global_hero_list:
+    for hero in reggie_constants.global_hero_list:
         liquipedia_hero = hero.replace('-', ' ').title().replace(' ', '_')
         print('Gathering hero: ' + hero)
         page = requests.get('https://liquipedia.net/dota2/' + liquipedia_hero)
         tree = html.fromstring(page.content)
         roleblox = tree.xpath("//div[contains(@class, 'infobox-cell-6')]")
         for element in roleblox:
-            if any(frequency in element.get('class') for frequency in role_frequencies):
+            if any(frequency in element.get('class') for frequency in
+                    role_frequencies):
                 role_data[roles_to_numbers[element.get('title')]].append(hero)
 
     with open('roles.json', 'w') as outfile:
@@ -139,12 +142,14 @@ def reload_roles():
 
     return str(role_data)
 
-# Most hacky thing ever
 def reload_hero_vs_hero():
-    for hero in reggieconstants.global_hero_list:
+    for hero in reggie_constants.global_hero_list:
         print('Gathering hero winrates: ' + hero)
-        cached_page = requests.get('http://webcache.googleusercontent.com/search?q=cache:https://www.dotabuff.com/heroes/' + hero + '/counters&num=1&strip=0&vwsrc=1')
-        dotabuff_page = html.fromstring(html.fromstring(cached_page.content).xpath('/html/body/div[2]/pre/text()[1]')[0])
+        cached_page = requests.get('http://webcache.googleusercontent.com/' +
+                'search?q=cache:https://www.dotabuff.com/heroes/' + hero +
+                '/counters&num=1&strip=0&vwsrc=1')
+        dotabuff_page = html.fromstring(html.fromstring(cached_page.content). \
+                xpath('/html/body/div[2]/pre/text()[1]')[0])
         all_elements = dotabuff_page.xpath('//tr')
         hero_matchup_dict = {'thishero': hero}
         for element in all_elements:
@@ -303,7 +308,8 @@ def draft_hero(command):
         os.remove('draft.json')
 
         if len(valid_permutations) == 0:
-            return "According to my database, there are no more valid role permutations of your heroes. Killing the draft."
+            return 'According to my database, there are no more valid role ' +
+                   'permutations of your heroes. Killing the draft.'
 
         response = 'Got it. Please draft one of these roles: *'
         rec_pool = []
@@ -337,7 +343,7 @@ def draft():
         return jsonify({'response_type':'in_channel', 'text':response})
 
     if command == 'info':
-        return reggieconstants.infotext
+        response = 'https://github.com/sclabs/reggie'
 
     if command == 'cancel':
         response = draft_cancel()
@@ -364,23 +370,23 @@ def draft():
             response = '`/draft start` takes a list of up to 5 players.'
 
     if words[0] == 'enemy':
-        if len(words) == 2 and words[1] in reggieconstants.global_hero_list:
+        if len(words) == 2 and words[1] in reggie_constants.global_hero_list:
             response = draft_hero(command)
 
         else:
             response = '`/draft enemy` needs exactly one hero specified.'
 
-    if words[0] == 'pub' and len(words) == 2 and words[1] in reggieconstants.global_hero_list:
+    if words[0] == 'pub' and len(words) == 2 and words[1] in reggie_constants.global_hero_list:
         response = draft_pub(words[1])
 
-    if command in reggieconstants.global_hero_list:
+    if command in reggie_constants.global_hero_list:
         response = draft_hero(command)
 
     # if words[0] in all_players:
     #    response = 'Drafting for player ' + command
 
     if response == '':
-        return reggieconstants.default_response
+        return reggie_constants.default_response
 
     return jsonify({'response_type':'in_channel', 'text':response})
 
