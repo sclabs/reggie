@@ -308,8 +308,7 @@ def draft_hero(command):
         os.remove('draft.json')
 
         if len(valid_permutations) == 0:
-            return 'According to my database, there are no more valid role ' +
-                   'permutations of your heroes. Killing the draft.'
+            return 'According to my database, there are no more valid role permutations of your heroes. Killing the draft.'
 
         response = 'Got it. Please draft one of these roles: *'
         rec_pool = []
