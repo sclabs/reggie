@@ -10,13 +10,14 @@ from flask import Flask, request, jsonify
 import reggieconstants
 from itertools import permutations
 from scipy import stats
+from string import punctuation
 
 app = Flask(__name__)
 
 # To initialize DB, pop open a Python interpreter and run:
 # >>> from app import db
 # >>> db.create_all()
-app.config["SQLALCHEMY_DATABASE_URI"] = "mysql+pymysql://REDACTED:REDACTED@REDACTED/reggiedb"
+app.config["SQLALCHEMY_DATABASE_URI"] = 'mysql+pymysql://' + os.environ['DB_USERNAME'] + ':' + os.environ['DB_PASSWORD'] + '@' + os.environ['DB_URL'] + '/reggiedb'
 app.config["SQLALCHEMY_POOL_RECYCLE"] = 299
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
@@ -95,6 +96,7 @@ def player_remove(player_name):
     if len(players_matching_name.all()) == 0:
         return 'Player ' + player_name + ' isn\'t on my list.'
     players_matching_name.delete()
+    db.session.commit()
 
     return 'Removed player ' + player_name + '.'
 
@@ -154,6 +156,30 @@ def reload_hero_vs_hero():
         db.session.add(hero_db_row)
         db.session.commit()
 
+def reload_player_on_hero():
+    hero_name_lookup = {}
+    for hero in requests.get('https://api.opendota.com/api/heroes').json():
+        hero_name_lookup[str(hero['id'])] = hero['localized_name'].lower().replace('\'', '').replace(' ', '-')
+    sleep(1)
+
+    for id in [player.steamID for player in Player.query.all()]:
+        player_winrates = {'playerID': id}
+        player_numgames = {'playerID': id}
+        hero_data = requests.get('https://api.opendota.com/api/players/' + id + '/heroes').json()
+        for hero in hero_data:
+            hero_name = hero_name_lookup[hero['hero_id']]
+            if hero['games'] > 0:
+                winrate = hero['win']/hero['games']
+            else:
+                winrate = 0
+            player_winrates[hero_name] = str(winrate)
+            player_numgames[hero_name] = str(hero['games'])
+        sleep(1)
+
+        db.session.add(PlayerOnHero(**player_winrates))
+        db.session.add(NumGamesOnHero(**player_numgames))
+        db.session.commit()
+
 def threaded_reload(response_url):
     # reload_roles()
     # data = {'response_type':'in_channel', 'text':'Reloaded hero roles.'}
@@ -175,7 +201,7 @@ def reload(response_url):
     return 'Starting reload...'
 
 def recommendations():
-    response = 'RECOMMENDED: '
+    response = 'RECOMMENDED: \n'
 
     with open('draft.json') as file:
         current_draft = json.load(file)
@@ -183,22 +209,54 @@ def recommendations():
     hero_data = {}
     results = []
     all_hero_v_hero_matchups = HeroVsHero.query.all()
+    all_players = Player.query.all()
+    all_player_winrates = PlayerOnHero.query.all()
+    all_player_game_counts = NumGamesOnHero.query.all()
 
-    for matchup in all_hero_v_hero_matchups:
-        if matchup.thishero in current_draft['rec_pool']:
-            hero_data[matchup.thishero] = {}
-            for enemy_hero in current_draft['enemies']:
-                hero_data[matchup.thishero][enemy_hero] = float(getattr(matchup, enemy_hero))/100
+    for hero in current_draft['rec_pool']:
+        hero_data[hero] = {}
+        for enemy_hero in current_draft['enemies']:
+            matchup = next(x for x in all_hero_v_hero_matchups if x.thishero == hero)
+            hero_data[matchup.thishero][enemy_hero] = float(getattr(matchup, enemy_hero))/100
 
-    for hero in hero_data.keys():
-        results.append((hero, str(stats.gmean(list(hero_data[hero].values())))))
+    for hero in current_draft['rec_pool']:
+        matchups = next(x for x in all_hero_v_hero_matchups if x.thishero == hero)
+        for player in current_draft['players']:
+            playerID = next(x for x in all_players if x.name == player).steamID
+            num_games = getattr(next(x for x in all_player_game_counts if x.playerID == playerID), hero)
+            winrate_on_hero = getattr(next(x for x in all_player_winrates if x.playerID == playerID), hero)
 
-    results.sort(key=lambda x: x[1], reverse = True)
+            if int(num_games) > 4:
+                winrate_against_enemies = float(stats.gmean(list(hero_data[hero].values())))
+                combined_winrate = float(stats.gmean([float(winrate_on_hero), winrate_against_enemies]))
+                results.append((hero, player, str(winrate_on_hero), str(winrate_against_enemies), str(combined_winrate)))
+
+    results.sort(key=lambda x: x[4], reverse = True)
     for result in results[:5]:
-        response += '*' + result[0] + '* - ' + str(round(float(result[1])*100, 2)) + '%, '
-    response = response[:-2]
+        response += '*' + result[0] + '* - global ' + str(round(float(result[3])*100, 2)) + '%, ' + result[1] + ' ' + str(round(float(result[2])*100, 2)) + '%\n'
 
     return response
+
+def draft_pub(hero):
+    if not os.path.isfile('draft.json'):
+        return 'No draft in progress.'
+
+    with open('draft.json') as file:
+        current_draft = json.load(file)
+
+    if hero in current_draft['friendlies']:
+        return hero + ' is already on your team.'
+    if hero in current_draft['enemies']:
+        return hero + ' is on the other team.'
+
+    if hero in current_draft['rec_pool']:
+        print('got here')
+        current_draft['rec_pool'].remove(hero)
+
+        with open('draft.json', 'w') as outfile:
+            json.dump(current_draft, outfile)
+
+    return '\'Drafted\' ' + hero + ' for pub teammate.\n' + recommendations()
 
 def draft_hero(command):
     if not os.path.isfile('draft.json'):
@@ -306,10 +364,14 @@ def draft():
             response = '`/draft start` takes a list of up to 5 players.'
 
     if words[0] == 'enemy':
-        if len(words) != 2:
-            response = 'You need to specify an enemy hero.'
-        else:
+        if len(words) == 2 and words[1] in reggieconstants.global_hero_list:
             response = draft_hero(command)
+
+        else:
+            response = '`/draft enemy` needs exactly one hero specified.'
+
+    if words[0] == 'pub' and len(words) == 2 and words[1] in reggieconstants.global_hero_list:
+        response = draft_pub(words[1])
 
     if command in reggieconstants.global_hero_list:
         response = draft_hero(command)
