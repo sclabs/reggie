@@ -1,26 +1,33 @@
-# reggie alpha 0.0.6
+# Reggie 0.0.7-alpha
 
-## Usage
+## Run
 ```
 $ docker build -t reggie .
-$ docker run reggie -e 'DB_USERNAME=uname' -e 'DB_PASSWORD=pw' -e 'DB_URL=mysqlurl'
+$ docker run -e 'DB_USERNAME=uname' -e 'DB_PASSWORD=pw' -e 'DB_URL=mysqlurl' reggie
+```
+
+## Usage
+Reggie exposes its methods as a REST API and can also be used as a Slack bot.
+```
+{
+	"in_progress": false,
+	"players": [],
+	"bans": [],
+	"friendly_picks": [],
+	"enemy_picks": []
+}
 ```
 
 ## 0.1 roadmap:
 - refactor
 - draft_hero
     - force draft hero for player, role, or both
-
-## 0.2:
-- bans
-- current draft status
-- db info -> env vars
-- switch to continuous deployment from github
-- merge the two player on hero dbs
-- experiment with the weights between "player good on hero" and "hero good globally"
-- /draft suggest by role/player/both
 - player x hero permutation calculations
 - soft pairings - if we've already picked crystal-maiden for gilgi, return `drow-ranger - global xx%, gilgi yy% - manlytomb (zz%) takes crystal-maiden`
+
+## 0.2:
+- experiment with the weights between "player good on hero" and "hero good globally"
+- /draft suggest by role/player/both
 
 ## 1.0:
 - hero name aliases

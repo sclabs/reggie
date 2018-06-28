@@ -1,2 +1,4 @@
 __pycache__/
-draft.json
+reggie/__pycache__/
+reggie/__init__.pyc
+.DS_Store
